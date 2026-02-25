@@ -27,7 +27,7 @@ fi
 day_key_iso="$(date +%Y-%m-%d)"
 datetime_now="$(date +'%d-%m-%Y %H:%M')"
 hour_now="$(date +%H)"
-HEADER_NEW="date,mood,apathy,health,swag,anxiety,anger"
+HEADER_NEW="date,mood,apathy,health,swag,anxiety,anger,notes"
 HEADER_OLD_V1="date,mood,apathy,health,swag"
 HEADER_OLD_V2="date,mood,apathy,health,swag,anxiety"
 HEADER_OLD_V3="date,mood,apathy,health,swag,anxiety,anger"
@@ -57,14 +57,14 @@ else
         tmp_file="$(mktemp)"
         {
             printf "%s\n" "$HEADER_NEW"
-            awk 'NR > 1 { printf "%s,,\n", $0 }' "$CSV_FILE"
+            awk 'NR > 1 { printf "%s,,\"\"\n", $0 }' "$CSV_FILE"
         } > "$tmp_file"
         mv "$tmp_file" "$CSV_FILE"
     elif [ "$first_line" = "$HEADER_OLD_V2" ]; then
         tmp_file="$(mktemp)"
         {
             printf "%s\n" "$HEADER_NEW"
-            awk 'NR > 1 { printf "%s,\n", $0 }' "$CSV_FILE"
+            awk 'NR > 1 { printf "%s,\"\"\n", $0 }' "$CSV_FILE"
         } > "$tmp_file"
         mv "$tmp_file" "$CSV_FILE"
     elif [ "$first_line" = "$HEADER_OLD_V4" ]; then
@@ -73,13 +73,18 @@ else
             printf "%s\n" "$HEADER_NEW"
             awk -F, '
                 NR > 1 {
-                    printf "%s,%s,%s,%s,%s,%s,%s\n", $1, $2, $3, $4, $5, $6, $7
+                    printf "%s,%s,%s,%s,%s,%s,%s,\"\"\n", $1, $2, $3, $4, $5, $6, $7
                 }
             ' "$CSV_FILE"
         } > "$tmp_file"
         mv "$tmp_file" "$CSV_FILE"
     elif [ "$first_line" = "$HEADER_OLD_V3" ]; then
-        :
+        tmp_file="$(mktemp)"
+        {
+            printf "%s\n" "$HEADER_NEW"
+            awk 'NR > 1 { printf "%s,\"\"\n", $0 }' "$CSV_FILE"
+        } > "$tmp_file"
+        mv "$tmp_file" "$CSV_FILE"
     else
         # Unknown header: keep file untouched and continue with the new format for new rows.
         :
@@ -136,16 +141,44 @@ ask_rating() {
     done
 }
 
+ask_start_or_skip() {
+    local choice
+
+    choice="$(printf "Start now\nSkip this run\n" | rofi -dmenu -i -p "Mood tracker" -theme "$THEME" -no-custom)"
+    [ -z "$choice" ] && return 1
+    [ "$choice" = "Skip this run" ] && return 1
+    return 0
+}
+
+ask_notes() {
+    local value
+
+    # Optional free-text input. Empty value is valid.
+    value="$(rofi -dmenu -i -p "Notes (optional)" -theme "$THEME" < /dev/null)" || return 1
+    printf "%s\n" "$value"
+    return 0
+}
+
+csv_escape() {
+    local value="$1"
+    value="$(printf "%s" "$value" | tr '\r\n' '  ' | sed 's/"/""/g')"
+    printf "\"%s\"" "$value"
+}
+
+ask_start_or_skip || exit 0
+
 mood="$(ask_rating "Mood")" || exit 1
 apathy="$(ask_rating "Apathy")" || exit 1
 health="$(ask_rating "Health")" || exit 1
 swag="$(ask_rating "Swag")" || exit 1
 anxiety="$(ask_rating "Anxiety")" || exit 1
 anger="$(ask_rating "Anger")" || exit 1
+notes="$(ask_notes)" || notes=""
+notes_csv="$(csv_escape "$notes")"
 
 # Check again before append in case another process completed this time window while dialogs were open.
 if [ "$FORCE_MODE" -eq 0 ] && entry_exists_in_window; then
     exit 0
 fi
 
-printf "%s,%s,%s,%s,%s,%s,%s\n" "$datetime_now" "$mood" "$apathy" "$health" "$swag" "$anxiety" "$anger" >> "$CSV_FILE"
+printf "%s,%s,%s,%s,%s,%s,%s,%s\n" "$datetime_now" "$mood" "$apathy" "$health" "$swag" "$anxiety" "$anger" "$notes_csv" >> "$CSV_FILE"
