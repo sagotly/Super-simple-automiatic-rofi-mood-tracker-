@@ -125,16 +125,16 @@ ask_rating() {
     local value
     local options
 
-    options="$(printf "1\n2\n3\n4\n5\n6\n7\n8\n9\n10")"
+    options="$(printf "na\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10")"
 
     while true; do
-        value="$(printf "%s\n" "$options" | rofi -dmenu -i -p "$label (1-10)" -theme "$THEME" -no-custom)"
+        value="$(printf "%s\n" "$options" | rofi -dmenu -i -p "$label (1-10 or na)" -theme "$THEME" -no-custom)"
 
         if [ -z "$value" ]; then
             return 1
         fi
 
-        if [[ "$value" =~ ^([1-9]|10)$ ]]; then
+        if [[ "$value" == "na" ]] || [[ "$value" =~ ^([1-9]|10)$ ]]; then
             printf "%s\n" "$value"
             return 0
         fi
