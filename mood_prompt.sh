@@ -6,6 +6,7 @@ BASE_DIR="$HOME/.config/rofi/mood"
 THEME="$HOME/.config/rofi/theme.rasi"
 CSV_FILE="$BASE_DIR/mood_log.csv"
 LOCK_FILE="$BASE_DIR/.mood_prompt.lock"
+SKIP_FILE="$BASE_DIR/.mood_skipped_segments"
 FORCE_MODE=0
 
 for arg in "$@"; do
@@ -48,6 +49,7 @@ window_start_ts="$(date -d "$window_start_str" +%s 2>/dev/null || true)"
 window_end_ts="$(date -d "$window_end_str" +%s 2>/dev/null || true)"
 [ -z "$window_start_ts" ] && exit 0
 [ -z "$window_end_ts" ] && exit 0
+WINDOW_KEY="${window_start_ts}:${window_end_ts}"
 
 if [ ! -f "$CSV_FILE" ]; then
     printf "%s\n" "$HEADER_NEW" > "$CSV_FILE"
@@ -116,7 +118,16 @@ entry_exists_in_window() {
     return 1
 }
 
+segment_skipped() {
+    [ ! -f "$SKIP_FILE" ] && return 1
+    grep -qxF "$WINDOW_KEY" "$SKIP_FILE" 2>/dev/null
+}
+
 if [ "$FORCE_MODE" -eq 0 ] && entry_exists_in_window; then
+    exit 0
+fi
+
+if [ "$FORCE_MODE" -eq 0 ] && segment_skipped; then
     exit 0
 fi
 
@@ -141,12 +152,18 @@ ask_rating() {
     done
 }
 
+# Returns 0 = start, 1 = cancel (ask again next cron), 2 = skip this day segment (no more popups until next segment).
 ask_start_or_skip() {
     local choice
 
     choice="$(printf "Start now\nSkip this run\n" | rofi -dmenu -i -p "Mood tracker" -theme "$THEME" -no-custom)"
     [ -z "$choice" ] && return 1
-    [ "$choice" = "Skip this run" ] && return 1
+    if [ "$choice" = "Skip this run" ]; then
+        if ! grep -qxF "$WINDOW_KEY" "$SKIP_FILE" 2>/dev/null; then
+            printf "%s\n" "$WINDOW_KEY" >> "$SKIP_FILE"
+        fi
+        return 2
+    fi
     return 0
 }
 
@@ -165,7 +182,12 @@ csv_escape() {
     printf "\"%s\"" "$value"
 }
 
-ask_start_or_skip || exit 0
+if [ "$FORCE_MODE" -eq 0 ]; then
+    ask_start_or_skip
+    _gate=$?
+    [ "$_gate" -eq 2 ] && exit 0
+    [ "$_gate" -ne 0 ] && exit 0
+fi
 
 mood="$(ask_rating "Mood")" || exit 1
 apathy="$(ask_rating "Apathy")" || exit 1
